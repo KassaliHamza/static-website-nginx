@@ -1,0 +1,115 @@
+name: Provision and deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+# Two pushes in quick succession would otherwise fight over the SSH ingress rule.
+concurrency:
+  group: deploy-main
+  cancel-in-progress: false
+
+env:
+  # Terraform reads every TF_VAR_* automatically — no -var flags needed.
+  TF_VAR_region: ${{ vars.AWS_REGION }}
+  TF_VAR_domain_name: ${{ vars.DOMAIN_NAME }}
+  TF_VAR_public_key: ${{ vars.SSH_PUBLIC_KEY }}
+  TF_VAR_availability_zone: ${{ vars.AWS_AVAILABILITY_ZONE }}
+  TF_VAR_ssh_ingress_cidrs: ${{ vars.SSH_INGRESS_CIDRS || '[]' }}
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./terraform
+    outputs:
+      public_ip: ${{ steps.tf.outputs.public_ip }}
+      security_group_id: ${{ steps.tf.outputs.security_group_id }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          # The wrapper decorates stdout, which breaks `terraform output -raw`.
+          terraform_wrapper: false
+
+      - name: Terraform Init
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
+            -backend-config="key=${{ vars.TF_STATE_KEY }}" \
+            -backend-config="region=${{ vars.AWS_REGION }}"
+
+      - name: Terraform Apply
+        run: terraform apply -auto-approve
+
+      - name: Export infrastructure details
+        id: tf
+        run: |
+          {
+            echo "public_ip=$(terraform output -raw public_ip)"
+            echo "security_group_id=$(terraform output -raw security_group_id)"
+          } >> "$GITHUB_OUTPUT"
+
+  deploy:
+    needs: terraform
+    runs-on: ubuntu-latest
+    env:
+      HOST: ${{ needs.terraform.outputs.public_ip }}
+      SG_ID: ${{ needs.terraform.outputs.security_group_id }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Install Ansible
+        run: pipx install --include-deps ansible
+
+      - name: Write SSH private key
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+
+      - name: Open SSH for this runner
+        id: sg
+        run: |
+          CIDR="$(curl -fsS https://checkip.amazonaws.com)/32"
+          echo "cidr=$CIDR" >> "$GITHUB_OUTPUT"
+          if ! aws ec2 authorize-security-group-ingress \
+                 --group-id "$SG_ID" --protocol tcp --port 22 --cidr "$CIDR" 2>auth.err; then
+            grep -q InvalidPermission.Duplicate auth.err || { cat auth.err; exit 1; }
+          fi
+
+      - name: Deploy site
+        working-directory: ./ansible
+        run: |
+          printf '[web]\n%s\n\n[web:vars]\nansible_python_interpreter=/usr/bin/python3\n' \
+            "$HOST" > inventory.ci.ini
+          ansible-playbook playbook.yml -i inventory.ci.ini \
+            -e "domain=${{ vars.DOMAIN_NAME }} email=${{ vars.CERTBOT_EMAIL }}"
+
+      - name: Revoke SSH access
+        if: always() && steps.sg.outputs.cidr != ''
+        run: |
+          aws ec2 revoke-security-group-ingress \
+            --group-id "$SG_ID" --protocol tcp --port 22 --cidr "${{ steps.sg.outputs.cidr }}"

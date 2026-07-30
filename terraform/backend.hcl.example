@@ -1,0 +1,8 @@
+# Copy to backend.hcl (git-ignored), then:
+#   terraform init -backend-config=backend.hcl
+#
+# The bucket is created by bootstrap/bootstrap.sh, which prints these values.
+
+bucket = "static-site-tfstate-<AWS_ACCOUNT_ID>"
+key    = "static-site/terraform.tfstate"
+region = "us-east-2"

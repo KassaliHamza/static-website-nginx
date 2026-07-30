@@ -1,0 +1,76 @@
+---
+- name: Configure Nginx static site
+  hosts: web
+  become: true
+
+  tasks:
+    - name: Install Nginx
+      apt:
+        name: nginx
+        state: present
+        update_cache: true
+
+    - name: Ensure Nginx is running and enabled
+      service:
+        name: nginx
+        state: started
+        enabled: true
+
+    - name: Deploy static site files
+      copy:
+        src: ../site/
+        dest: /var/www/html/
+        owner: www-data
+        group: www-data
+        mode: "0644"
+        
+    - name: Check whether TLS is already configured
+      stat:
+        path: /etc/letsencrypt/live/{{ domain }}/fullchain.pem
+      register: tls_cert
+
+    # certbot --nginx rewrites this file in place to add the 443 server block and
+    # the 301 redirect. Re-templating it would strip both and take HTTPS down,
+    # and the certbot task below won't restore them because `creates` skips it.
+    - name: Deploy Nginx server block
+      template:
+        src: site.conf.j2
+        dest: /etc/nginx/sites-available/static-site.conf
+      when: not tls_cert.stat.exists
+      notify: reload nginx
+
+    - name: Enable the site
+      file:
+        src: /etc/nginx/sites-available/static-site.conf
+        dest: /etc/nginx/sites-enabled/static-site.conf
+        state: link
+      notify: reload nginx
+
+    - name: Disable the default site
+      file:
+        path: /etc/nginx/sites-enabled/default
+        state: absent
+      notify: reload nginx
+
+    - name: Install certbot
+      apt:
+        name:
+          - certbot
+          - python3-certbot-nginx
+        state: present
+        update_cache: true
+
+    - name: Obtain and install Let's Encrypt certificate
+      command: >
+        certbot --nginx
+        -d {{ domain }} -d www.{{ domain }}
+        --non-interactive --agree-tos
+        -m {{ email }}
+        --redirect
+      args:
+        creates: /etc/letsencrypt/live/{{ domain }}/fullchain.pem
+  handlers:
+    - name: reload nginx
+      service:
+        name: nginx
+        state: reloaded

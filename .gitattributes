@@ -1,0 +1,15 @@
+# Auto detect text files and perform LF normalization
+* text=auto
+
+# Keep LF in the working tree for anything Linux reads byte-for-byte.
+# Terraform hashes the user_data heredoc, so a CRLF checkout on Windows and an
+# LF checkout in CI disagree forever and no plan is ever clean.
+*.tf     text eol=lf
+*.hcl    text eol=lf
+*.yml    text eol=lf
+*.yaml   text eol=lf
+*.j2     text eol=lf
+*.cfg    text eol=lf
+*.ini    text eol=lf
+*.sh     text eol=lf
+*.html   text eol=lf

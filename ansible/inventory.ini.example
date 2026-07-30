@@ -1,0 +1,11 @@
+# Copy to inventory.ini (git-ignored) and substitute the Elastic IP:
+#   terraform -chdir=../terraform output -raw public_ip
+#
+# The CI deploy job generates this file itself, so it is only needed for
+# running the playbook by hand.
+
+[web]
+203.0.113.7
+
+[web:vars]
+ansible_python_interpreter=/usr/bin/python3

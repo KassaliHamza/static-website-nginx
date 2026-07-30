@@ -1,0 +1,50 @@
+# ---- Terraform ----
+# Local state (can contain secrets in plain text — never commit)
+*.tfstate
+*.tfstate.*
+.terraform.tfstate.lock.info
+
+# Provider plugins & modules cache
+**/.terraform/*
+
+# Crash logs
+crash.log
+crash.*.log
+
+# Variable files often hold secrets — ignore real ones, keep the example
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+
+# CLI config that may contain credentials
+.terraformrc
+terraform.rc
+
+# Backend config names an account-specific bucket — keep the example only
+backend.hcl
+
+# ---- Ansible ----
+*.retry
+vault-password*
+.vault_pass*
+
+# Inventory holds a live host address — generated from terraform output
+inventory.ini
+inventory.ci.ini
+
+# ---- SSH keys / secrets ----
+*.pem
+*.key
+id_rsa
+id_rsa.*
+
+# ---- Local tool state ----
+# Holds machine-specific paths and a per-user command allowlist
+.claude/settings.local.json
+
+# ---- OS / editor cruft ----
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp

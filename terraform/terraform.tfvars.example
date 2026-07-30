@@ -1,0 +1,16 @@
+# Copy to terraform.tfvars (git-ignored) and fill in your own values.
+
+domain_name = "example.com"
+
+# Your SSH public key material — the contents of ~/.ssh/id_ed25519.pub, not a path.
+public_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... you@host"
+
+# Optional. Leave empty to keep port 22 closed; CI opens it per-deploy.
+# Add your own address for interactive SSH: ["203.0.113.7/32"]
+ssh_ingress_cidrs = []
+
+# Optional overrides
+# region            = "us-east-2"
+# project           = "static-site"
+# instance_type     = "t2.micro"
+# availability_zone = "us-east-2b"
